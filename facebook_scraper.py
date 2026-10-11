@@ -49,11 +49,10 @@ class FacebookMarketplaceScraper(BaseScraper):
         url = f"{self.base_url}/category/vehicles?query={encoded_query}"
         
         print(f"Searching Facebook Marketplace: {url}")
-        print("Note: Facebook Marketplace requires JavaScript rendering.")
-        print("For best results, consider using Selenium in a future enhancement.")
+        print("Note: Facebook Marketplace may require login; parsing is best-effort.")
         
         # Attempt basic fetch (will likely return minimal data)
-        soup = self.fetch_page(url)
+        soup = self.fetch_page(url, 'a[href*="/marketplace/item/"]')
         if not soup:
             print("Unable to fetch Facebook Marketplace (JavaScript required)")
             return listings

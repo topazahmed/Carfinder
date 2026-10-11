@@ -2,7 +2,7 @@
 
 import re
 from typing import List, Optional
-from urllib.parse import quote
+from urllib.parse import quote, urljoin
 from base_scraper import BaseScraper
 from models import CarListing
 
@@ -45,14 +45,14 @@ class KijijiScraper(BaseScraper):
         
         print(f"Searching Kijiji: {url}")
         
-        soup = self.fetch_page(url)
+        soup = self.fetch_page(url, '.search-item, [data-testid="listing-card"], .listing-item')
         if not soup:
             return listings
         
         # Find all listing items (Kijiji uses specific class names)
         # Note: This is a simplified implementation. Actual Kijiji scraping may need
         # more sophisticated parsing or may require handling JavaScript-rendered content
-        listing_items = soup.find_all('div', class_='search-item')
+        listing_items = soup.select('.search-item, [data-testid="listing-card"], .listing-item')
         
         if not listing_items:
             # Try alternative selector
@@ -81,33 +81,44 @@ class KijijiScraper(BaseScraper):
             CarListing object or None if parsing fails
         """
         # Extract title
-        title_elem = item.find('a', class_='title')
+        title_elem = item.select_one('[data-testid="listing-link"], [data-testid="listing-title"] a')
         if not title_elem:
-            title_elem = item.find('a')
+            title_elem = item.find('a', class_='title')
+        if not title_elem:
+            title_elem = next((anchor for anchor in item.find_all('a', href=True)
+                               if anchor.get_text(strip=True)), None)
         
         if not title_elem:
             return None
         
         title = title_elem.get_text(strip=True)
         url = title_elem.get('href', '')
-        if url and not url.startswith('http'):
-            url = self.base_url + url
+        if not title or not url:
+            return None
+        url = urljoin(self.base_url, url)
         
         # Extract price
-        price_elem = item.find('div', class_='price')
+        price_elem = item.select_one('[data-testid="autos-listing-price"], [data-testid="listing-price"]')
+        if not price_elem:
+            price_elem = item.find('div', class_='price')
         if not price_elem:
             price_elem = item.find('span', class_='price')
         price = price_elem.get_text(strip=True) if price_elem else "Contact for price"
         
         # Extract location
-        location_elem = item.find('div', class_='location')
+        location_elem = item.select_one('[data-testid="listing-location"]')
+        if not location_elem:
+            location_elem = item.find('div', class_='location')
         if not location_elem:
             location_elem = item.find('span', class_='location')
         location = location_elem.get_text(strip=True) if location_elem else None
         
         # Extract description
-        desc_elem = item.find('div', class_='description')
+        desc_elem = item.select_one('[data-testid="listing-description"]')
+        if not desc_elem:
+            desc_elem = item.find('div', class_='description')
         description = desc_elem.get_text(strip=True) if desc_elem else None
+        mileage_match = re.search(r'\b[\d][\d, ]*\s*km\b', item.get_text(' ', strip=True), re.IGNORECASE)
         
         # Try to extract year from title
         year = self._extract_year(title)
@@ -120,11 +131,12 @@ class KijijiScraper(BaseScraper):
             year=year,
             make="",  # Will be set by aggregator
             model="",  # Will be set by aggregator
-            mileage=None,  # Could be extracted from description
+            mileage=mileage_match.group(0).strip() if mileage_match else None,
             location=location,
             url=url,
             source=self.get_source_name(),
-            description=description
+            description=description,
+            external_id=item.get('data-listingid')
         )
     
     def _extract_year(self, text: str) -> str:

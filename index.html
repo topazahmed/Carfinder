@@ -466,7 +466,10 @@
     </div>
 
     <script>
-        const API_BASE_URL = 'https://carfinder-production-6990.up.railway.app';
+        const API_BASE_URL = new URLSearchParams(window.location.search).get('api') ||
+            (window.location.protocol === 'file:' ? 'http://127.0.0.1:8000' :
+            ['localhost', '127.0.0.1'].includes(window.location.hostname) ? window.location.origin :
+            'https://carfinder-production-6990.up.railway.app');
         let currentView = 'grid';
         let currentData = null;
 

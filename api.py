@@ -14,7 +14,11 @@ Endpoints:
 
 from fastapi import FastAPI, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from typing import List, Optional
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+import os
+from pathlib import Path
+from typing import List, Literal, Optional
 from pydantic import BaseModel
 from aggregator import CarFinderAggregator
 from models import CarListing
@@ -49,6 +53,7 @@ class CarListingResponse(BaseModel):
     url: str
     source: str
     description: Optional[str] = None
+    external_id: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -69,6 +74,12 @@ class HealthResponse(BaseModel):
 
 # Initialize aggregator
 aggregator = CarFinderAggregator()
+app.mount('/assets', StaticFiles(directory=Path(__file__).parent / 'assets'), name='assets')
+
+
+@app.get('/app', include_in_schema=False)
+def web_interface():
+    return FileResponse(Path(__file__).parent / 'index.html')
 
 
 @app.get("/", tags=["Root"])
@@ -92,11 +103,13 @@ async def health_check():
 
 
 @app.get("/api/search", response_model=SearchResponse, tags=["Search"])
-async def search_cars(
-    make: str = Query(..., description="Car make (e.g., Honda, Toyota, Ford)"),
-    model: str = Query(..., description="Car model (e.g., Civic, Camry, F-150)"),
+def search_cars(
+    make: str = Query(..., min_length=1, max_length=100, description="Car make (e.g., Honda, Toyota, Ford)"),
+    model: str = Query(..., min_length=1, max_length=100, description="Car model (e.g., Civic, Camry, F-150)"),
     location: Optional[str] = Query(None, description="Location to search in (optional)"),
-    parallel: bool = Query(True, description="Run scrapers in parallel for faster results")
+    parallel: bool = Query(True, description="Run scrapers in parallel for faster results"),
+    mode: Literal['live', 'stored'] = Query(os.getenv('SEARCH_MODE', 'live'), description='Scrape now or read PostgreSQL snapshots'),
+    limit: int = Query(100, ge=1, le=500, description='Maximum stored listings returned')
 ):
     """
     Search for car listings across multiple websites.
@@ -115,12 +128,17 @@ async def search_cars(
     """
     try:
         # Perform search
-        listings = aggregator.search(
-            make=make,
-            model=model,
-            location=location,
-            parallel=parallel
-        )
+        if mode == 'stored':
+            if not aggregator.store:
+                raise HTTPException(status_code=503, detail='Stored search requires DATABASE_URL.')
+            listings = aggregator.store.search(make, model, location, limit)
+        else:
+            listings = aggregator.search(
+                make=make,
+                model=model,
+                location=location,
+                parallel=parallel
+            )
         
         # Convert to response models
         listing_responses = [
@@ -134,7 +152,8 @@ async def search_cars(
                 location=listing.location,
                 url=listing.url,
                 source=listing.source,
-                description=listing.description
+                description=listing.description,
+                external_id=listing.external_id
             )
             for listing in listings
         ]
@@ -151,10 +170,12 @@ async def search_cars(
             listings=listing_responses
         )
         
-    except Exception as e:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(
-            status_code=500,
-            detail=f"Error searching for listings: {str(e)}"
+            status_code=503,
+            detail="Search unavailable. Check scraper access and PostgreSQL configuration in the server."
         )
 
 

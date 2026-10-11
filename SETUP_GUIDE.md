@@ -1,5 +1,123 @@
 # 🚗 CarFinder Web API - Quick Setup Guide
 
+## Integrated Browser, Database, and Scheduled Runs
+
+Use the existing project, rather than creating a second scraper. Playwright renders
+HTML for the existing parsers, the aggregator saves searches when `DATABASE_URL`
+is configured, and the CLI can be run as a scheduled one-shot job.
+
+### Local Setup (macOS/Linux)
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+python -m playwright install chromium
+cp .env.example .env
+```
+
+On Windows, activate with `venv\Scripts\Activate.ps1`. In VS Code, install the
+Microsoft Python extension and use **Python: Select Interpreter** to select
+`venv`. Do not reuse the repository's tracked `.venv` Windows environment on macOS.
+The requirements currently cap Playwright below 1.56 for macOS 12
+compatibility. Upgrade macOS and revalidate before lifting this cap; older
+browser builds do not receive current security updates.
+
+The template enables Playwright. Without it, the default remains `requests` for
+existing deployments. `PLAYWRIGHT_HEADLESS=false` opens a visible browser for
+debugging. Optional `SCRAPER_PROXY_SERVER`, `SCRAPER_PROXY_USERNAME`, and
+`SCRAPER_PROXY_PASSWORD` configure a provider you are authorized to use; proxies
+are not universally required and do not guarantee access. Credentials remain in
+the ignored `.env` file, not source code.
+
+### PostgreSQL
+
+Install/start PostgreSQL locally or provision a managed instance, create a database
+named `car_finder`, and set this in `.env` using your own credentials:
+
+```dotenv
+DATABASE_URL=postgresql://YOUR_USER:YOUR_PASSWORD@localhost:5432/car_finder
+```
+
+URL-encode special characters in credentials. For managed databases, follow the
+provider's TLS configuration, commonly `?sslmode=require`. The connection uses
+`psycopg2-binary` to avoid requiring a local compiler and PostgreSQL headers.
+
+```bash
+python conexion.py
+python conexion.py --init
+python carfinder.py Toyota Camry --sources autotrader kijiji --require-database
+```
+
+`conexion.py` checks connectivity; `--init` creates the table and vehicle index.
+The CLI also initializes the schema when persistence is enabled. Listings use a
+unique `(source, external_id)` key, extracting numeric IDs from listing paths
+or hashing the canonical URL when an ID is unavailable. Re-scraping updates the
+snapshot and `last_seen`, preserving `first_seen`. This is not a price-history
+table and does not mark disappeared listings as sold or delete old snapshots.
+
+### Website and Search API
+
+```bash
+python -m uvicorn api:app --host 127.0.0.1 --port 8000
+```
+
+Open http://127.0.0.1:8000/app for the existing interface or
+http://127.0.0.1:8000/docs for the API. Local pages use the local API; the existing
+hosted frontend still defaults to Railway. An explicit frontend override is
+available with `?api=http://127.0.0.1:8000`.
+
+```bash
+curl 'http://127.0.0.1:8000/api/search?make=Toyota&model=Camry&mode=stored&location=Toronto&limit=100'
+```
+
+`mode=live` scrapes and saves when PostgreSQL is configured. `mode=stored` reads
+saved snapshots without contacting listing sites. Set `SEARCH_MODE=stored` and
+restart the API to make stored search the website default. Initialize the schema
+and run a scrape first. Stored search matches make/model case-insensitively and
+filters location by substring; live location handling remains source-dependent
+and the existing Kijiji/AutoTrader scrapers do not reliably constrain geography.
+`total_count` counts the returned results, capped by `limit` in stored mode.
+Blocking browser/database work runs in FastAPI's worker threads, not its event loop.
+
+### Scheduling
+
+The CLI exits after each run, so use cron, Task Scheduler, or a hosted scheduled
+worker. It exits nonzero if every source fails or PostgreSQL is unavailable;
+partial source failures are logged while successful results are saved. Logs
+should be monitored, and frequency should respect each site's terms and limits.
+
+Example daily cron entry at 07:00, replacing the absolute project path:
+
+```cron
+0 7 * * * cd /absolute/path/to/Carfinder && venv/bin/python carfinder.py Toyota Camry --sources autotrader kijiji --require-database --sequential >> scraper.log 2>&1
+```
+
+Cron runs only while the machine is awake. Use a hosted worker for unattended
+uptime. Configure its working directory, database URL, and browser installation
+in the job environment. Chromium requires system libraries on Linux; install with
+`python -m playwright install --with-deps chromium` during image/build setup.
+Do not run browser jobs in an ordinary Vercel request function. AWS Lambda requires
+a compatible container image, Chromium dependencies, and an EventBridge schedule;
+deploying only these Python files is insufficient. PythonAnywhere support depends
+on account permissions, browser availability, and outbound-network restrictions.
+No cloud job or recurring local task is created automatically by this setup.
+
+### Validation and Limitations
+
+```bash
+python -m unittest test_integration -v
+```
+
+These offline tests cover rendering, cleanup, fixture parsing, deduplication,
+parameterized database queries, aggregator persistence, API modes, and CLI flags.
+They do not prove access to live marketplaces or a real PostgreSQL database.
+Facebook remains best-effort: its parser is a placeholder and login/access may
+be required. Browser rendering does not bypass authentication, CAPTCHAs, or site
+restrictions. AutoTrader and Kijiji selectors must be checked against current,
+permitted pages and maintained when sites change. A selector timeout is reported
+as a source failure rather than silently returning a successful empty search.
+
 ## Step 1: Install Dependencies
 
 Open PowerShell in this directory and run:

@@ -1,7 +1,10 @@
 """Data models for car listings."""
 
 from dataclasses import dataclass
+import hashlib
+import re
 from typing import Optional
+from urllib.parse import urlsplit
 
 
 @dataclass
@@ -18,6 +21,16 @@ class CarListing:
     url: str
     source: str
     description: Optional[str] = None
+    external_id: Optional[str] = None
+
+    def __post_init__(self):
+        if not self.external_id and self.url:
+            parsed = urlsplit(self.url)
+            identifiers = re.findall(r'(?<!\d)\d{5,}(?!\d)', parsed.path)
+            canonical_url = f'{parsed.netloc.lower()}{parsed.path.rstrip("/")}'
+            self.external_id = identifiers[-1] if identifiers else hashlib.sha256(
+                canonical_url.encode('utf-8')
+            ).hexdigest()
     
     def to_dict(self):
         """Convert to dictionary for API responses."""
@@ -31,7 +44,8 @@ class CarListing:
             'location': self.location,
             'url': self.url,
             'source': self.source,
-            'description': self.description
+            'description': self.description,
+            'external_id': self.external_id
         }
     
     def __str__(self):

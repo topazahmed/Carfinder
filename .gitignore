@@ -22,8 +22,12 @@ wheels/
 
 # Virtual Environment
 venv/
+.venv/
 ENV/
 env/
+.env
+.env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -40,3 +44,7 @@ Thumbs.db
 *.log
 config.local.json
 scraped_data/
+public/
+.vercel/
+.vercel
+.env*

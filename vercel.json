@@ -1,8 +1,9 @@
 {
-  "buildCommand": null,
+  "framework": null,
+  "buildCommand": "node build_frontend.cjs",
   "devCommand": null,
   "installCommand": null,
-  "outputDirectory": ".",
+  "outputDirectory": "public",
   "rewrites": [
     { "source": "/", "destination": "/index.html" }
   ],

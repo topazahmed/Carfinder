@@ -1,5 +1,58 @@
 # Vercel Deployment Guide for CarFinder Frontend
 
+## Current Deployment
+
+Production frontend: https://carfinder-phi.vercel.app
+
+Project settings: https://vercel.com/topazahmeds-projects/carfinder/settings
+
+The frontend and video asset were verified with public HTTP 200 responses.
+The configured Railway API at `https://carfinder-production-6990.up.railway.app`
+currently returns HTTP 404, "Application not found". The page is deployed, but
+live searches are not operational until a hosted backend is connected.
+
+### Deployment Architecture
+
+Vercel serves only the HTML and assets. `node build_frontend.cjs` copies these
+into `public/`, which is the configured output directory. `.vercelignore`
+excludes Python code, environments, and local credentials from CLI uploads.
+Do not publish the repository root as the static output directory.
+
+The Python API and Playwright jobs need a separate browser-capable host such as
+Railway or a container service. Deploy the current backend changes there,
+install Chromium and its Linux dependencies, and verify `/api/health` and an
+actual search. Vercel does not run this project's scraper or schedule its CLI.
+
+### Remaining Setup
+
+1. Provision or restore the hosted Python API. Use `uvicorn api:app --host 0.0.0.0 --port $PORT`.
+2. Set `SCRAPER_BACKEND=playwright` on that host and install Chromium during its build. On Linux use `python -m playwright install --with-deps chromium`; the image needs permission to install system libraries.
+3. In Vercel Settings -> Environment Variables, set `API_BASE_URL` to the working API's HTTPS base URL, without `/api/search`. Select Production and Preview as appropriate, then redeploy. This value is public configuration, not a secret.
+4. Configure backend CORS for `https://carfinder-phi.vercel.app` and approved preview/local origins. The backend currently permits all origins; narrow this before a production launch.
+5. For persistence, provision PostgreSQL, set `DATABASE_URL` on the backend/job host only, and run `python conexion.py --init`. Verify a real save/search round-trip.
+6. For scheduled inventory, create a hosted cron job using `python carfinder.py Toyota Camry --sources kijiji --require-database --sequential`. Set `SEARCH_MODE=stored` on the API after the first successful saved run.
+7. AutoTrader access remains unverified, Facebook parsing is incomplete, and dealership feeds require provider access and licensing. Do not assume deploying fixes these source limitations.
+
+Keep database passwords, proxy credentials, and inventory API keys off Vercel's
+static frontend. For this architecture they belong on the backend/job host.
+Vercel preview deployments may require authentication; production returned public
+HTTP 200 during verification. Review Deployment Protection if access differs.
+
+### Redeploy From This Workspace
+
+```bash
+node build_frontend.cjs
+vercel --prod --yes
+```
+
+Vercel CLI is linked to `topazahmeds-projects/carfinder`. This deployment uploaded
+the local working tree; no Git commit or push was made. Connect the GitHub
+repository in Vercel and commit/push the intended changes to enable Git-based
+automatic deployments. Do not commit generated `public/`, `.vercel/`, or `.env` files.
+
+The older walkthrough below is general background. Use the build settings and
+environment-variable configuration above instead of editing a hard-coded API URL.
+
 ## 🔷 Deploy Frontend to Vercel
 
 ### Prerequisites

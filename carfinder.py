@@ -52,17 +52,26 @@ Supported Sources:
         action='store_true',
         help='Run scrapers sequentially instead of in parallel (slower but easier to debug)'
     )
+    parser.add_argument('--sources', nargs='+', choices=['autotrader', 'kijiji', 'facebook'],
+                        help='Sources to search (default: all)')
+    parser.add_argument('--require-database', action='store_true',
+                        help='Require PostgreSQL persistence; suitable for scheduled jobs')
     
     args = parser.parse_args()
     
     # Create aggregator and run search
-    aggregator = CarFinderAggregator()
+    aggregator = CarFinderAggregator(sources=args.sources)
+    if args.require_database and not aggregator.store:
+        parser.error('--require-database needs DATABASE_URL in the environment or .env')
     
     try:
+        if aggregator.store:
+            aggregator.store.initialize()
         aggregator.search_and_display(
             make=args.make,
             model=args.model,
-            location=args.location
+            location=args.location,
+            parallel=not args.sequential
         )
     except KeyboardInterrupt:
         print("\n\nSearch interrupted by user.")

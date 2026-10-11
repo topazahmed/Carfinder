@@ -42,13 +42,13 @@ class AutoTraderScraper(BaseScraper):
         
         print(f"Searching AutoTrader: {url}")
         
-        soup = self.fetch_page(url)
+        soup = self.fetch_page(url, '.result-item, .listing-item')
         if not soup:
             return listings
         
         # Find all listing containers
         # AutoTrader uses specific class names for listings
-        listing_items = soup.find_all('div', class_='result-item')
+        listing_items = soup.select('.result-item, .listing-item')
         
         if not listing_items:
             # Try alternative selectors
